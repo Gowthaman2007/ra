@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RoadScan — Smart Road Condition Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+:root {
+  --bg:       #f0f2f7;
+  --surface:  #ffffff;
+  --surface2: #f7f8fc;
+  --border:   #e2e6ef;
+  --border2:  #cdd3e0;
+  --text:     #1a1f2e;
+  --text2:    #4a5368;
+  --muted:    #8e96a8;
+  --accent:   #2563eb;
+  --accent2:  #1d4ed8;
+  --good:     #16a34a;
+  --good-bg:  #dcfce7;
+  --good-bd:  #86efac;
+  --avg:      #d97706;
+  --avg-bg:   #fef3c7;
+  --avg-bd:   #fcd34d;
+  --bad:      #dc2626;
+  --bad-bg:   #fee2e2;
+  --bad-bd:   #fca5a5;
+  --shadow:   0 1px 3px rgba(0,0,0,0.07), 0 4px 12px rgba(0,0,0,0.05);
+  --shadow2:  0 2px 8px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06);
+}
+
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+/* ── HEADER ─────────────────────────────────────────────────────── */
+header {
+  height: 58px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  position: relative;
+  z-index: 900;
+}
+
+.logo-mark {
+  width: 34px; height: 34px;
+  background: var(--accent);
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px;
+  flex-shrink: 0;
+}
+
+.logo-text h1 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.3px;
+  line-height: 1;
+}
+.logo-text p {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-family: 'DM Mono', monospace;
+  margin-top: 1px;
+}
+
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-badge {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'DM Mono', monospace;
+  letter-spacing: 0.5px;
+  border: 1.5px solid var(--border2);
+  background: var(--surface2);
+  transition: all 0.3s;
+}
+.status-badge.scanning { background: #eff6ff; border-color: #93c5fd; color: var(--accent); }
+.status-badge.demo { background: #fefce8; border-color: #fde68a; color: var(--avg); }
+
+.status-led {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: all 0.3s;
+}
+.status-led.on { background: var(--good); box-shadow: 0 0 0 3px rgba(22,163,74,0.2); animation: blink 1.5s infinite; }
+.status-led.demo { background: var(--avg); box-shadow: 0 0 0 3px rgba(217,119,6,0.2); animation: blink 1.5s infinite; }
+
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ── LAYOUT ──────────────────────────────────────────────────────── */
+.app-body {
+  display: flex;
+  height: calc(100vh - 58px);
+}
+
+/* ── SIDEBAR ─────────────────────────────────────────────────────── */
+.sidebar {
+  width: 300px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.sb-section {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sb-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  margin-bottom: 12px;
+}
+
+/* Scan button */
+.scan-btn {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+}
+.scan-btn:hover { background: var(--accent2); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(37,99,235,0.35); }
+.scan-btn:active { transform: translateY(0); }
+.scan-btn.stop { background: var(--bad); box-shadow: 0 2px 8px rgba(220,38,38,0.3); }
+.scan-btn.stop:hover { background: #b91c1c; }
+
+.scan-btn .btn-icon { font-size: 16px; }
+
+/* Condition card */
+.cond-card {
+  border-radius: 12px;
+  padding: 16px;
+  border: 2px solid var(--border);
+  background: var(--surface2);
+  transition: all 0.4s ease;
+  text-align: center;
+}
+.cond-card.good { background: var(--good-bg); border-color: var(--good-bd); }
+.cond-card.average { background: var(--avg-bg); border-color: var(--avg-bd); }
+.cond-card.damaged { background: var(--bad-bg); border-color: var(--bad-bd); }
+
+.cond-emoji { font-size: 32px; margin-bottom: 6px; line-height: 1; }
+.cond-label {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  transition: color 0.3s;
+}
+.cond-card.good .cond-label { color: var(--good); }
+.cond-card.average .cond-label { color: var(--avg); }
+.cond-card.damaged .cond-label { color: var(--bad); }
+
+.cond-sub {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 4px;
+  font-family: 'DM Mono', monospace;
+}
+
+/* ML confidence bar */
+.conf-bar-wrap { margin-top: 10px; }
+.conf-bar-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text2); margin-bottom: 4px; }
+.conf-bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.07);
+  overflow: hidden;
+}
+.conf-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.cond-card.good .conf-bar-fill { background: var(--good); }
+.cond-card.average .conf-bar-fill { background: var(--avg); }
+.cond-card.damaged .conf-bar-fill { background: var(--bad); }
+
+/* Sensor gauges */
+.gauge-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gauge {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: border-color 0.3s;
+}
+.gauge.active { border-color: #93c5fd; background: #eff6ff; }
+.gauge-hd { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+.gauge-val { font-family: 'DM Mono', monospace; font-size: 17px; font-weight: 500; color: var(--text); transition: color 0.3s; }
+.gauge.active .gauge-val { color: var(--accent); }
+
+/* Vibration spark */
+.spark-wrap {
+  height: 56px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  overflow: hidden;
+  position: relative;
+}
+#sparkCanvas { width: 100%; height: 100%; display: block; }
+
+/* ML probabilities */
+.prob-list { display: flex; flex-direction: column; gap: 7px; }
+.prob-row { display: flex; align-items: center; gap: 8px; }
+.prob-name { font-size: 12px; font-weight: 600; width: 64px; flex-shrink: 0; }
+.prob-name.good { color: var(--good); }
+.prob-name.avg { color: var(--avg); }
+.prob-name.bad { color: var(--bad); }
+.prob-track { flex: 1; height: 8px; border-radius: 4px; background: var(--bg); overflow: hidden; border: 1px solid var(--border); }
+.prob-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+.prob-fill.good { background: var(--good); }
+.prob-fill.avg { background: var(--avg); }
+.prob-fill.bad { background: var(--bad); }
+.prob-pct { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text2); width: 32px; text-align: right; }
+
+/* Speed & GPS */
+.info-row { display: flex; gap: 8px; }
+.info-chip {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+}
+.info-chip-lbl { font-size: 10px; color: var(--muted); font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px; }
+.info-chip-val { font-family: 'DM Mono', monospace; font-size: 16px; font-weight: 500; color: var(--text); }
+
+/* Event log */
+.log-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+.log-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  border: 1px solid transparent;
+  animation: fadeSlide 0.3s ease;
+}
+@keyframes fadeSlide { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:translateY(0)} }
+.log-item.good { background: var(--good-bg); border-color: var(--good-bd); }
+.log-item.average { background: var(--avg-bg); border-color: var(--avg-bd); }
+.log-item.damaged { background: var(--bad-bg); border-color: var(--bad-bd); }
+.log-item-txt { flex: 1; color: var(--text); line-height: 1.4; }
+.log-item-time { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); white-space: nowrap; margin-top: 1px; }
+.log-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 0; }
+
+/* Stats strip */
+.stats-strip { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.stat-card {
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+  border: 1.5px solid var(--border);
+  background: var(--surface2);
+}
+.stat-card.good { background: var(--good-bg); border-color: var(--good-bd); }
+.stat-card.average { background: var(--avg-bg); border-color: var(--avg-bd); }
+.stat-card.damaged { background: var(--bad-bg); border-color: var(--bad-bd); }
+.stat-num { font-family: 'DM Mono', monospace; font-size: 22px; font-weight: 500; line-height: 1; }
+.stat-card.good .stat-num { color: var(--good); }
+.stat-card.average .stat-num { color: var(--avg); }
+.stat-card.damaged .stat-num { color: var(--bad); }
+.stat-lbl { font-size: 10px; color: var(--text2); font-weight: 600; margin-top: 3px; }
+
+/* Export btn */
+.export-btn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border2);
+  background: var(--surface);
+  color: var(--text2);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.export-btn:hover { border-color: var(--accent); color: var(--accent); background: #eff6ff; }
+
+/* ── MAP AREA ─────────────────────────────────────────────────────── */
+.map-wrap { flex: 1; position: relative; overflow: hidden; }
+#map { width: 100%; height: 100%; }
+
+/* Map overlay cards */
+.map-panel {
+  position: absolute;
+  z-index: 800;
+  background: rgba(255,255,255,0.94);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow2);
+  backdrop-filter: blur(8px);
+}
+
+.map-legend { top: 12px; right: 12px; min-width: 160px; }
+.legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; margin-bottom: 6px; }
+.legend-row:last-child { margin-bottom: 0; }
+.legend-dot { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0; border: 2px solid rgba(0,0,0,0.1); }
+
+.map-dist { bottom: 28px; left: 12px; }
+.map-dist-val { font-family: 'DM Mono', monospace; font-size: 18px; font-weight: 500; color: var(--accent); }
+.map-dist-lbl { font-size: 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-top: 1px; }
+
+/* Alert toast */
+.alert-toast {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  z-index: 900;
+  background: var(--bad-bg);
+  border: 1.5px solid var(--bad-bd);
+  border-radius: 12px;
+  padding: 11px 18px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bad);
+  box-shadow: var(--shadow2);
+  transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+.alert-toast.show { transform: translateX(-50%) translateY(0); }
+
+/* Map tip panel */
+.map-tip { top: 12px; left: 12px; font-size: 12px; color: var(--text2); max-width: 200px; display: none; }
+.map-tip.visible { display: block; }
+.map-tip strong { color: var(--text); display: block; margin-bottom: 2px; font-size: 13px; }
+
+/* ── MODAL ────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(240,242,247,0.85);
+  backdrop-filter: blur(16px);
+  z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 36px 32px;
+  max-width: 380px; width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.12);
+}
+.modal-emoji { font-size: 52px; margin-bottom: 16px; }
+.modal h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; margin-bottom: 10px; }
+.modal p { font-size: 14px; color: var(--text2); line-height: 1.65; margin-bottom: 24px; }
+.modal-feature { display: flex; align-items: flex-start; gap: 10px; text-align: left; margin-bottom: 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.modal-feature span:first-child { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.modal-feature-text { font-size: 13px; color: var(--text2); line-height: 1.4; }
+.modal-feature-text strong { color: var(--text); font-weight: 600; display: block; }
+.mbtn { width: 100%; padding: 13px; border-radius: 10px; border: none; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 10px; transition: all 0.2s; }
+.mbtn.primary { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
+.mbtn.primary:hover { background: var(--accent2); }
+.mbtn.secondary { background: var(--surface2); color: var(--text2); border: 1.5px solid var(--border2); }
+.mbtn.secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Leaflet popup styles */
+.road-popup { font-family: 'DM Sans', sans-serif; min-width: 140px; }
+.road-popup .rp-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+.road-popup .rp-score { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text2); }
+.road-popup .rp-time { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.road-popup .rp-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-top: 6px; }
+.road-popup .rp-badge.good { background: var(--good-bg); color: var(--good); }
+.road-popup .rp-badge.average { background: var(--avg-bg); color: var(--avg); }
+.road-popup .rp-badge.damaged { background: var(--bad-bg); color: var(--bad); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .sidebar { width: 100%; max-height: 44vh; border-right: none; border-bottom: 1px solid var(--border); }
+  .app-body { flex-direction: column; }
+  .map-wrap { flex: 1; min-height: 56vh; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── PERMISSION MODAL ───────────────────────────────────────────── -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-emoji">🛣️</div>
+    <h2>RoadScan Setup</h2>
+    <p>Grant access to your device sensors so RoadScan can analyse road conditions using on-device ML while you drive.</p>
+    <div class="modal-feature">
+      <span>📡</span>
+      <div class="modal-feature-text"><strong>Accelerometer</strong>Detects bumps, potholes & vibration patterns</div>
+    </div>
+    <div class="modal-feature">
+      <span>📍</span>
+      <div class="modal-feature-text"><strong>GPS</strong>Maps your route with condition overlays</div>
+    </div>
+    <div class="modal-feature">
+      <span>🤖</span>
+      <div class="modal-feature-text"><strong>On-device ML</strong>Classifies road quality in real time — no server needed</div>
+    </div>
+    <button class="mbtn primary" onclick="requestPermissions()">🔐 Grant Sensor Access</button>
+    <button class="mbtn secondary" onclick="useDemoMode()">🎮 Try Demo Mode</button>
+  </div>
+</div>
+
+<!-- ── HEADER ─────────────────────────────────────────────────────── -->
+<header>
+  <div class="logo-mark">🛣️</div>
+  <div class="logo-text">
+    <h1>RoadScan</h1>
+    <p>ML Road Monitor</p>
+  </div>
+  <div class="header-right">
+    <div class="status-badge" id="statusBadge">
+      <div class="status-led" id="statusLed"></div>
+      <span id="statusTxt">STANDBY</span>
+    </div>
+  </div>
+</header>
+
+<!-- ── APP BODY ───────────────────────────────────────────────────── -->
+<div class="app-body">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- SCAN CONTROL -->
+    <div class="sb-section">
+      <div class="sb-label">Scan Control</div>
+      <button class="scan-btn" id="scanBtn" onclick="toggleScan()">
+        <span class="btn-icon">▶</span>
+        <span id="scanBtnTxt">Start Scanning</span>
+      </button>
+    </div>
+
+    <!-- CONDITION -->
+    <div class="sb-section">
+      <div class="sb-label">Current Road Condition</div>
+      <div class="cond-card" id="condCard">
+        <div class="cond-emoji" id="condEmoji">⏸️</div>
+        <div class="cond-label" id="condLabel">Idle</div>
+        <div class="cond-sub" id="condSub">Tap Start to begin scanning</div>
+        <div class="conf-bar-wrap">
+          <div class="conf-bar-labels"><span>ML Confidence</span><span id="confPct">—</span></div>
+          <div class="conf-bar-track"><div class="conf-bar-fill" id="confFill" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ML PROBABILITIES -->
+    <div class="sb-section">
+      <div class="sb-label">ML Class Probabilities</div>
+      <div class="prob-list">
+        <div class="prob-row">
+          <div class="prob-name good">Good</div>
+          <div class="prob-track"><div class="prob-fill good" id="probGood" style="width:33%"></div></div>
+          <div class="prob-pct" id="probGoodPct">33%</div>
+        </div>
+        <div class="prob-row">
+          <div class="prob-name avg">Average</div>
+          <div class="prob-track"><div class="prob-fill avg" id="probAvg" style="width:33%"></div></div>
+          <div class="prob-pct" id="probAvgPct">33%</div>
+        </div>
+        <div class="prob-row">
+          <div class="prob-name bad">Damaged</div>
+          <div class="prob-track"><div class="prob-fill bad" id="probBad" style="width:34%"></div></div>
+          <div class="prob-pct" id="probBadPct">34%</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SENSOR DATA -->
+    <div class="sb-section">
+      <div class="sb-label">Sensor Readings</div>
+      <div class="gauge-row">
+        <div class="gauge" id="gX"><div class="gauge-hd">↔ X-Axis</div><div class="gauge-val" id="gxV">—</div></div>
+        <div class="gauge" id="gY"><div class="gauge-hd">↕ Y-Axis</div><div class="gauge-val" id="gyV">—</div></div>
+        <div class="gauge" id="gZ"><div class="gauge-hd">⊙ Z-Axis</div><div class="gauge-val" id="gzV">—</div></div>
+        <div class="gauge" id="gR"><div class="gauge-hd">📳 RMS</div><div class="gauge-val" id="rmsV">—</div></div>
+      </div>
+      <div style="margin-top:8px">
+        <div class="spark-wrap"><canvas id="sparkCanvas"></canvas></div>
+      </div>
+    </div>
+
+    <!-- SPEED & GPS -->
+    <div class="sb-section">
+      <div class="sb-label">Vehicle Info</div>
+      <div class="info-row">
+        <div class="info-chip"><div class="info-chip-lbl">Speed</div><div class="info-chip-val"><span id="speedV">0</span> km/h</div></div>
+        <div class="info-chip"><div class="info-chip-lbl">Altitude</div><div class="info-chip-val"><span id="altV">—</span> m</div></div>
+      </div>
+      <div style="margin-top:8px" class="info-chip">
+        <div class="info-chip-lbl">GPS Coordinates</div>
+        <div class="info-chip-val" style="font-size:12px" id="gpsV">Acquiring…</div>
+      </div>
+    </div>
+
+    <!-- STATS -->
+    <div class="sb-section">
+      <div class="sb-label">Session Summary</div>
+      <div class="stats-strip">
+        <div class="stat-card good"><div class="stat-num" id="stGood">0</div><div class="stat-lbl">Good</div></div>
+        <div class="stat-card average"><div class="stat-num" id="stAvg">0</div><div class="stat-lbl">Average</div></div>
+        <div class="stat-card damaged"><div class="stat-num" id="stBad">0</div><div class="stat-lbl">Damaged</div></div>
+      </div>
+    </div>
+
+    <!-- LOG -->
+    <div class="sb-section">
+      <div class="sb-label">Event Log</div>
+      <div class="log-list" id="logList">
+        <div class="log-empty">No events yet — start scanning to begin.</div>
+      </div>
+    </div>
+
+    <!-- EXPORT -->
+    <div class="sb-section">
+      <button class="export-btn" onclick="exportData()">📥 Export Route Data (JSON)</button>
+    </div>
+
+  </div>
+
+  <!-- MAP -->
+  <div class="map-wrap">
+    <div id="map"></div>
+
+    <!-- Legend -->
+    <div class="map-panel map-legend">
+      <div class="sb-label" style="margin-bottom:10px">Road Condition</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#16a34a"></div> Good Road</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#d97706"></div> Average Road</div>
+      <div class="legend-row"><div class="legend-dot" style="background:#dc2626"></div> Damaged Road</div>
+    </div>
+
+    <!-- Distance -->
+    <div class="map-panel map-dist">
+      <div class="map-dist-lbl">Distance Travelled</div>
+      <div class="map-dist-val" id="distV">0.00 km</div>
+    </div>
+
+    <!-- Hover tip -->
+    <div class="map-panel map-tip" id="mapTip">
+      <strong>Click any dot on the map</strong>
+      to view road condition details at that point.
+    </div>
+
+    <!-- Alert toast -->
+    <div class="alert-toast" id="alertToast">
+      <span>🚨</span><span id="alertMsg">Severe road damage detected!</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  ON-DEVICE ML ENGINE  — sliding-window feature extraction
+//  + Naive Bayes / linear classifier trained on heuristics
+// ════════════════════════════════════════════════════════════
+const ML = (() => {
+  // Gaussian Naive Bayes parameters (pre-trained / calibrated)
+  // Features: [rms, peak, variance, zeroCrossRate, kurtosis]
+  const MODEL = {
+    good:    { mu: [1.2, 3.0, 0.8,  0.3, 2.8], sigma: [0.6, 1.2, 0.4, 0.10, 0.9] },
+    average: { mu: [4.0, 9.0, 5.0,  0.5, 3.8], sigma: [1.2, 2.5, 2.0, 0.12, 1.2] },
+    damaged: { mu: [8.5,18.0,18.0,  0.7, 6.5], sigma: [2.5, 5.0, 7.0, 0.15, 2.5] },
+  };
+  const CLASSES = ['good','average','damaged'];
+  const PRIOR = { good: 0.40, average: 0.35, damaged: 0.25 };
+
+  function gaussianLog(x, mu, sigma) {
+    return -0.5 * Math.log(2 * Math.PI * sigma * sigma) - ((x - mu) ** 2) / (2 * sigma * sigma);
+  }
+
+  function extractFeatures(window) {
+    // window: array of raw Z-axis values (gravity-removed)
+    const n = window.length;
+    if (n < 2) return [0,0,0,0,3];
+    const mean = window.reduce((a,b)=>a+b,0)/n;
+    const variance = window.reduce((a,b)=>a+(b-mean)**2,0)/n;
+    const rms = Math.sqrt(window.reduce((a,b)=>a+b*b,0)/n);
+    const peak = Math.max(...window.map(Math.abs));
+    let zc = 0;
+    for (let i=1;i<n;i++) if ((window[i-1]>=0) !== (window[i]>=0)) zc++;
+    const zeroCrossRate = zc / n;
+    const kurt_num = window.reduce((a,b)=>a+(b-mean)**4,0)/n;
+    const kurtosis = variance > 0 ? kurt_num / (variance**2) : 3;
+    return [rms, peak, variance, zeroCrossRate, kurtosis];
+  }
+
+  function predict(window) {
+    const feats = extractFeatures(window);
+    const logProbs = {};
+    let maxLog = -Infinity;
+
+    for (const cls of CLASSES) {
+      const { mu, sigma } = MODEL[cls];
+      let lp = Math.log(PRIOR[cls]);
+      for (let i=0;i<feats.length;i++) lp += gaussianLog(feats[i], mu[i], sigma[i]);
+      logProbs[cls] = lp;
+      if (lp > maxLog) maxLog = lp;
+    }
+
+    // Softmax on log-probs for probabilities
+    const exps = {};
+    let sumExp = 0;
+    for (const cls of CLASSES) {
+      exps[cls] = Math.exp(logProbs[cls] - maxLog);
+      sumExp += exps[cls];
+    }
+    const probs = {};
+    for (const cls of CLASSES) probs[cls] = exps[cls] / sumExp;
+
+    const pred = CLASSES.reduce((a,b) => probs[a] > probs[b] ? a : b);
+    return { prediction: pred, probabilities: probs, features: feats };
+  }
+
+  return { predict };
+})();
+
+// ════════════════════════════════════════════════════════════
+//  APP STATE
+// ════════════════════════════════════════════════════════════
+const S = {
+  scanning: false,
+  demo: false,
+  demoMotion: false,
+  gpsWatchId: null,
+  lat: null, lng: null,
+  speed: 0, alt: 0,
+  x: 0, y: 0, z: 0, rms: 0,
+  gravX: 0, gravY: 0, gravZ: 9.8,
+  sensorWindow: [],
+  WINDOW_SIZE: 60,
+  condition: 'idle',
+  confidence: 0,
+  probs: { good: 0.33, average: 0.33, damaged: 0.34 },
+  history: { good: 0, average: 0, damaged: 0 },
+  distance: 0,
+  lastLat: null, lastLng: null,
+  sparkData: new Array(100).fill(0),
+  mapPoints: [],
+  alertTimer: null,
+  demoAngle: 0,
+  demoPhaseIdx: 0,
+  demoPhaseCount: 0,
+  logCount: 0,
+  prevCondition: null,
+  frameN: 0,
+  lastMapUpdate: 0,
+};
+
+const DEMO_PHASES = [
+  {rmsBase:0.8, dur:120}, {rmsBase:1.2,dur:80},
+  {rmsBase:3.8, dur:60},  {rmsBase:4.5,dur:50},
+  {rmsBase:8.2, dur:40},  {rmsBase:10, dur:30},
+  {rmsBase:1.0, dur:100}, {rmsBase:2.5,dur:70},
+];
+
+// ════════════════════════════════════════════════════════════
+//  LEAFLET MAP
+// ════════════════════════════════════════════════════════════
+let map, posMarker, pulseMarker, polylines = [], markers = [];
+let mapReady = false;
+
+function initMap(lat, lng) {
+  if (mapReady) return;
+  mapReady = true;
+
+  const clat = lat || 11.262308;
+  const clng = lng || 77.600936;
+
+  map = L.map('map', {
+    center: [clat, clng],
+    zoom: 16,
+    zoomControl: true,
+    attributionControl: true,
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19,
+    crossOrigin: true,
+  }).addTo(map);
+
+  // Position marker
+  posMarker = L.circleMarker([clat, clng], {
+    radius: 10,
+    fillColor: '#2563eb',
+    color: '#ffffff',
+    weight: 3,
+    fillOpacity: 1,
+    zIndexOffset: 1000,
+  }).addTo(map).bindTooltip('📍 You', { permanent: true, direction: 'top', offset: [0, -12] });
+
+  // Force correct tile rendering after layout settles
+  setTimeout(() => { if (map) { map.invalidateSize(true); } }, 100);
+  setTimeout(() => { if (map) { map.invalidateSize(true); } }, 600);
+
+  document.getElementById('mapTip').classList.add('visible');
+}
+
+function moveMarker(lat, lng) {
+  if (!posMarker || !map) return;
+  posMarker.setLatLng([lat, lng]);
+  if (!map.getBounds().pad(-0.1).contains([lat, lng])) {
+    map.panTo([lat, lng], { animate: true, duration: 0.5 });
+  }
+}
+
+window.addEventListener('resize', () => { if (map) map.invalidateSize(true); });
+
+function condColor(cond) {
+  return cond === 'good' ? '#16a34a' : cond === 'average' ? '#d97706' : '#dc2626';
+}
+
+function addMapPoint(lat, lng, cond, score, conf) {
+  if (!map) return;
+  const color = condColor(cond);
+  const time = new Date().toLocaleTimeString();
+
+  const m = L.circleMarker([lat, lng], {
+    radius: 7,
+    fillColor: color,
+    color: '#fff',
+    weight: 2,
+    fillOpacity: 0.92,
+  }).addTo(map);
+
+  const condLabels = { good: '✅ Good', average: '⚠️ Average', damaged: '🚨 Damaged' };
+  m.bindPopup(`
+    <div class="road-popup">
+      <div class="rp-title">${condLabels[cond]}</div>
+      <div class="rp-score">Road Score: <strong>${score}/100</strong></div>
+      <div class="rp-score">ML Confidence: <strong>${conf}%</strong></div>
+      <div class="rp-time">🕐 ${time}</div>
+      <div class="rp-time">📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}</div>
+      <span class="rp-badge ${cond}">${cond.toUpperCase()}</span>
+    </div>
+  `);
+
+  if (S.mapPoints.length > 0) {
+    const prev = S.mapPoints[S.mapPoints.length - 1];
+    L.polyline([[prev.lat, prev.lng], [lat, lng]], {
+      color: color, weight: 5, opacity: 0.85, lineJoin: 'round', lineCap: 'round',
+    }).addTo(map);
+  }
+
+  markers.push(m);
+  S.mapPoints.push({ lat, lng, cond, score, conf, time });
+  moveMarker(lat, lng);
+}
+
+// ════════════════════════════════════════════════════════════
+//  PERMISSIONS
+// ════════════════════════════════════════════════════════════
+async function requestPermissions() {
+  document.getElementById('modalOverlay').style.display = 'none';
+
+  // Init map immediately — never blank
+  initMap(11.262308, 77.600936);
+  addLog('⏳ Acquiring GPS and sensors…', 'average');
+
+  // ── Motion Sensor ──
+  let motionOk = false;
+  if (typeof DeviceMotionEvent !== 'undefined') {
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      // iOS 13+ needs explicit permission
+      try {
+        const r = await DeviceMotionEvent.requestPermission();
+        if (r === 'granted') { setupMotion(); motionOk = true; }
+        else { addLog('⚠️ Motion permission denied — vibration simulated', 'average'); }
+      } catch (e) {
+        addLog('⚠️ Motion permission error — vibration simulated', 'average');
+      }
+    } else {
+      // Android / Chrome desktop — fires automatically
+      setupMotion();
+      motionOk = true;
+    }
+  }
+
+  if (!motionOk) S.demoMotion = true;
+
+  // ── GPS ──
+  if (!navigator.geolocation) {
+    addLog('⚠️ GPS not supported on this browser', 'damaged');
+    S.lat = 11.262308; S.lng = 77.600936;
+    S.lastLat = S.lat; S.lastLng = S.lng;
+    setStatus('READY', 'scanning');
+    return;
+  }
+
+  // Initial fix (fast, coarse)
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      S.lat = lat; S.lng = lng;
+      S.lastLat = lat; S.lastLng = lng;
+      S.alt = pos.coords.altitude ? Math.round(pos.coords.altitude) : 0;
+      if (map) { map.setView([lat, lng], 16); posMarker.setLatLng([lat, lng]); }
+      document.getElementById('gpsV').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      addLog(`📍 GPS fix: ${lat.toFixed(5)}, ${lng.toFixed(5)}`, 'good');
+    },
+    err => {
+      addLog(`⚠️ GPS fix failed (${err.message}) — using default`, 'average');
+      S.lat = 11.262308; S.lng = 77.600936;
+      S.lastLat = S.lat; S.lastLng = S.lng;
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
+  );
+
+  // Continuous high-accuracy watch
+  S.gpsWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const spd = pos.coords.speed;       // m/s or null
+      const alt = pos.coords.altitude;
+
+      S.speed = (spd !== null && spd >= 0) ? (spd * 3.6) : S.speed;
+      S.alt   = alt ? Math.round(alt) : S.alt;
+
+      // Accumulate distance (only when scanning, filter GPS glitches)
+      if (S.scanning && S.lastLat !== null) {
+        const d = haversine(S.lastLat, S.lastLng, lat, lng);
+        if (d < 0.3) {      // <300 m jump — valid movement
+          S.distance += d;
+          document.getElementById('distV').textContent = S.distance.toFixed(3) + ' km';
+        }
+      }
+      S.lastLat = S.lat = lat;
+      S.lastLng = S.lng = lng;
+
+      // Always update position marker & GPS display
+      if (posMarker) posMarker.setLatLng([lat, lng]);
+      if (map && S.scanning && !map.getBounds().pad(-0.05).contains([lat, lng])) {
+        map.panTo([lat, lng], { animate: true });
+      }
+      document.getElementById('gpsV').textContent   = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      document.getElementById('speedV').textContent = Math.round(S.speed);
+      document.getElementById('altV').textContent   = S.alt || '—';
+    },
+    err => {
+      console.warn('GPS watch:', err.message);
+      // Don't log every watch error — it's noisy
+    },
+    { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
+  );
+
+  setStatus('READY', 'scanning');
+}
+
+// Real accelerometer handler — works on Android & iOS
+function setupMotion() {
+  let lastTime = null;
+
+  window.addEventListener('devicemotion', e => {
+    // Use whichever acceleration object has data
+    const acc = e.acceleration || e.accelerationIncludingGravity;
+    if (!acc) return;
+
+    const ax = acc.x || 0;
+    const ay = acc.y || 0;
+    const az = acc.z || 0;
+
+    // If using accelerationIncludingGravity, remove gravity via LPF
+    let jerkZ;
+    if (e.acceleration && (e.acceleration.x !== null)) {
+      // Clean acceleration (gravity already removed by device)
+      jerkZ = az;
+      S.x = ax; S.y = ay; S.z = az;
+    } else {
+      // Remove gravity with exponential LPF
+      S.gravX = 0.85 * S.gravX + 0.15 * ax;
+      S.gravY = 0.85 * S.gravY + 0.15 * ay;
+      S.gravZ = 0.85 * S.gravZ + 0.15 * az;
+      S.x = ax - S.gravX;
+      S.y = ay - S.gravY;
+      jerkZ = az - S.gravZ;
+      S.z = jerkZ;
+    }
+
+    // Feed sliding window
+    S.sensorWindow.push(jerkZ);
+    if (S.sensorWindow.length > S.WINDOW_SIZE) S.sensorWindow.shift();
+
+    // RMS of full 3-axis linear acceleration
+    S.rms = Math.sqrt((S.x * S.x + S.y * S.y + jerkZ * jerkZ) / 3);
+  }, true);
+}
+
+function useDemoMode(skipModal) {
+  if (!skipModal) document.getElementById('modalOverlay').style.display = 'none';
+  S.demo = true;
+  S.demoMotion = true;
+  S.lat = 11.262308; S.lng = 77.600936;
+  S.lastLat = S.lat; S.lastLng = S.lng;
+  initMap(S.lat, S.lng);
+  setStatus('DEMO', 'demo');
+  addLog('🎮 Demo mode — simulating driving route around Erode', 'average');
+}
+
+// ════════════════════════════════════════════════════════════
+//  SCAN TOGGLE
+// ════════════════════════════════════════════════════════════
+function toggleScan() {
+  S.scanning = !S.scanning;
+  const btn = document.getElementById('scanBtn');
+  const txt = document.getElementById('scanBtnTxt');
+  if (S.scanning) {
+    btn.classList.add('stop');
+    btn.querySelector('.btn-icon').textContent = '⏹';
+    txt.textContent = 'Stop Scanning';
+    setStatus('SCANNING', 'on');
+    addLog('🟢 Scan session started', 'good');
+    if (S.demo) document.getElementById('gpsV').textContent = `${S.lat.toFixed(5)}, ${S.lng.toFixed(5)}`;
+  } else {
+    btn.classList.remove('stop');
+    btn.querySelector('.btn-icon').textContent = '▶';
+    txt.textContent = 'Start Scanning';
+    setStatus('STANDBY', '');
+    addLog('⏸ Scan session paused', 'average');
+    resetCondDisplay();
+  }
+}
+
+function setStatus(txt, cls) {
+  document.getElementById('statusTxt').textContent = txt;
+  const b = document.getElementById('statusBadge');
+  const l = document.getElementById('statusLed');
+  b.className = 'status-badge ' + cls;
+  l.className = 'status-led ' + cls;
+}
+
+function resetCondDisplay() {
+  const card = document.getElementById('condCard');
+  card.className = 'cond-card';
+  document.getElementById('condEmoji').textContent = '⏸️';
+  document.getElementById('condLabel').textContent = 'Idle';
+  document.getElementById('condSub').textContent = 'Tap Start to begin scanning';
+  document.getElementById('confFill').style.width = '0%';
+  document.getElementById('confPct').textContent = '—';
+}
+
+// ════════════════════════════════════════════════════════════
+//  CONDITION DISPLAY UPDATE
+// ════════════════════════════════════════════════════════════
+function updateCondUI(cond, probs, conf, score) {
+  const card = document.getElementById('condCard');
+  card.className = 'cond-card ' + cond;
+
+  const emojis = { good: '✅', average: '⚠️', damaged: '🚨' };
+  const labels = { good: 'Good Road', average: 'Average Road', damaged: 'Damaged Road' };
+  const subs   = { good: 'Surface is smooth — safe to drive', average: 'Minor bumps detected — drive carefully', damaged: 'Significant damage — slow down!' };
+
+  document.getElementById('condEmoji').textContent = emojis[cond];
+  document.getElementById('condLabel').textContent = labels[cond];
+  document.getElementById('condSub').textContent = subs[cond];
+  document.getElementById('confFill').style.width = conf + '%';
+  document.getElementById('confPct').textContent = conf + '%';
+
+  // ML probs
+  const pg = Math.round(probs.good * 100);
+  const pa = Math.round(probs.average * 100);
+  const pb = Math.round(probs.damaged * 100);
+  document.getElementById('probGood').style.width = pg + '%';
+  document.getElementById('probAvg').style.width = pa + '%';
+  document.getElementById('probBad').style.width = pb + '%';
+  document.getElementById('probGoodPct').textContent = pg + '%';
+  document.getElementById('probAvgPct').textContent = pa + '%';
+  document.getElementById('probBadPct').textContent = pb + '%';
+}
+
+// ════════════════════════════════════════════════════════════
+//  SPARK CANVAS
+// ════════════════════════════════════════════════════════════
+const sparkCanvas = document.getElementById('sparkCanvas');
+const sctx = sparkCanvas.getContext('2d');
+
+function resizeSpark() {
+  sparkCanvas.width = sparkCanvas.parentElement.clientWidth * devicePixelRatio;
+  sparkCanvas.height = sparkCanvas.parentElement.clientHeight * devicePixelRatio;
+  sctx.scale(devicePixelRatio, devicePixelRatio);
+}
+window.addEventListener('resize', resizeSpark);
+resizeSpark();
+
+function drawSpark(cond) {
+  const w = sparkCanvas.parentElement.clientWidth;
+  const h = sparkCanvas.parentElement.clientHeight;
+  sctx.clearRect(0, 0, w, h);
+
+  const maxV = 15;
+  const step = w / (S.sparkData.length - 1);
+  const color = cond === 'good' ? '#16a34a' : cond === 'average' ? '#d97706' : cond === 'damaged' ? '#dc2626' : '#8e96a8';
+
+  const grad = sctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, color + '30');
+  grad.addColorStop(1, color + '05');
+
+  sctx.beginPath();
+  S.sparkData.forEach((v, i) => {
+    const x = i * step;
+    const y = h - (Math.min(Math.abs(v), maxV) / maxV) * (h - 6) - 3;
+    i === 0 ? sctx.moveTo(x, y) : sctx.lineTo(x, y);
+  });
+  const lastY = h - (Math.min(Math.abs(S.sparkData[S.sparkData.length-1]), maxV)/maxV)*(h-6)-3;
+  sctx.lineTo(w, h); sctx.lineTo(0, h);
+  sctx.closePath();
+  sctx.fillStyle = grad;
+  sctx.fill();
+
+  sctx.beginPath();
+  S.sparkData.forEach((v, i) => {
+    const x = i * step;
+    const y = h - (Math.min(Math.abs(v), maxV) / maxV) * (h - 6) - 3;
+    i === 0 ? sctx.moveTo(x, y) : sctx.lineTo(x, y);
+  });
+  sctx.strokeStyle = color;
+  sctx.lineWidth = 2;
+  sctx.lineJoin = 'round';
+  sctx.stroke();
+}
+
+// ════════════════════════════════════════════════════════════
+//  LOG
+// ════════════════════════════════════════════════════════════
+function addLog(msg, cond) {
+  const list = document.getElementById('logList');
+  const empty = list.querySelector('.log-empty');
+  if (empty) empty.remove();
+
+  const time = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  const div = document.createElement('div');
+  div.className = `log-item ${cond}`;
+  div.innerHTML = `<div class="log-item-txt">${msg}</div><div class="log-item-time">${time}</div>`;
+  list.insertBefore(div, list.firstChild);
+  if (list.children.length > 40) list.removeChild(list.lastChild);
+}
+
+// ════════════════════════════════════════════════════════════
+//  ALERT TOAST
+// ════════════════════════════════════════════════════════════
+function showAlert(msg) {
+  const t = document.getElementById('alertToast');
+  document.getElementById('alertMsg').textContent = msg;
+  t.classList.add('show');
+  if (S.alertTimer) clearTimeout(S.alertTimer);
+  S.alertTimer = setTimeout(() => t.classList.remove('show'), 4500);
+}
+
+// ════════════════════════════════════════════════════════════
+//  HAVERSINE
+// ════════════════════════════════════════════════════════════
+function haversine(la1,lo1,la2,lo2) {
+  const R = 6371, r = Math.PI/180;
+  const dLa=(la2-la1)*r, dLo=(lo2-lo1)*r;
+  const a = Math.sin(dLa/2)**2 + Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dLo/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ════════════════════════════════════════════════════════════
+//  DEMO ENGINE
+// ════════════════════════════════════════════════════════════
+function demoBuildWindow() {
+  const ph = DEMO_PHASES[S.demoPhaseIdx % DEMO_PHASES.length];
+  S.demoPhaseCount++;
+  if (S.demoPhaseCount >= ph.dur) { S.demoPhaseCount = 0; S.demoPhaseIdx++; }
+
+  const base = ph.rmsBase;
+  const jerk = (Math.random() - 0.5) * base * 2.2 + (Math.random() - 0.5) * base * 0.8;
+
+  S.sensorWindow.push(jerk);
+  if (S.sensorWindow.length > S.WINDOW_SIZE) S.sensorWindow.shift();
+  S.rms = Math.sqrt(S.sensorWindow.reduce((a,b)=>a+b*b,0) / Math.max(1, S.sensorWindow.length));
+
+  // Simulate raw axis values for gauge display
+  S.x = parseFloat(((Math.random() - 0.5) * base * 0.6).toFixed(3));
+  S.y = parseFloat(((Math.random() - 0.5) * base * 0.6).toFixed(3));
+  S.z = parseFloat((9.8 + jerk).toFixed(3));
+  return jerk;
+}
+
+function demoGPS() {
+  S.demoAngle += 0.012;
+  const lat = 11.262308 + Math.sin(S.demoAngle)*0.004 + Math.cos(S.demoAngle*2.1)*0.001;
+  const lng = 77.600936 + Math.cos(S.demoAngle)*0.005 + Math.sin(S.demoAngle*1.7)*0.001;
+
+  if (S.lastLat !== null && S.lastLng !== null) {
+    const d = haversine(S.lastLat, S.lastLng, lat, lng);
+    if (d < 0.1) S.distance += d;
+  }
+  S.lastLat = S.lat = lat;
+  S.lastLng = S.lng = lng;
+  S.speed = Math.max(0, 28 + Math.sin(S.demoAngle * 3) * 18);
+  S.alt = Math.round(320 + Math.sin(S.demoAngle) * 15);
+
+  document.getElementById('gpsV').textContent   = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  document.getElementById('speedV').textContent = Math.round(S.speed);
+  document.getElementById('altV').textContent   = S.alt;
+  document.getElementById('distV').textContent  = S.distance.toFixed(3) + ' km';
+
+  if (posMarker) posMarker.setLatLng([lat, lng]);
+  if (map && !map.getBounds().contains([lat, lng])) map.panTo([lat, lng]);
+}
+
+// ════════════════════════════════════════════════════════════
+//  SCORE
+// ════════════════════════════════════════════════════════════
+function roadScore(cond, rms) {
+  if (cond === 'good') return Math.max(75, Math.round(100 - rms * 8));
+  if (cond === 'average') return Math.max(40, Math.round(75 - rms * 5));
+  return Math.max(0, Math.round(40 - rms * 2));
+}
+
+// ════════════════════════════════════════════════════════════
+//  MAIN LOOP
+// ════════════════════════════════════════════════════════════
+function loop() {
+  S.frameN++;
+
+  if (S.scanning) {
+
+    // ── Vibration source ──
+    if (S.demoMotion) {
+      // No real sensor — simulate
+      demoBuildWindow();
+    }
+    // else: real data comes in via devicemotion event listener
+
+    // ── GPS source ──
+    if (S.demo) {
+      // Full demo mode: simulate GPS too
+      demoGPS();
+    }
+    // else: real GPS comes in via watchPosition callback
+
+    // ── Spark graph ──
+    const latestJerk = S.sensorWindow.length ? S.sensorWindow[S.sensorWindow.length - 1] : 0;
+    S.sparkData.push(latestJerk);
+    S.sparkData.shift();
+    drawSpark(S.condition);
+
+    // ── Gauges — update every frame from live S state ──
+    if (S.frameN % 4 === 0) {
+      document.getElementById('gxV').textContent  = S.x.toFixed(3);
+      document.getElementById('gyV').textContent  = S.y.toFixed(3);
+      document.getElementById('gzV').textContent  = S.z.toFixed(3);
+      document.getElementById('rmsV').textContent = S.rms.toFixed(3);
+      ['gX','gY','gZ','gR'].forEach(id => document.getElementById(id).classList.add('active'));
+
+      // Speed / distance update for real GPS (demo updates its own in demoGPS)
+      if (!S.demo) {
+        document.getElementById('speedV').textContent = Math.round(S.speed);
+        document.getElementById('altV').textContent   = S.alt || '—';
+        document.getElementById('distV').textContent  = S.distance.toFixed(3) + ' km';
+      }
+    }
+
+    // ── ML — run every 10 frames, need at least 10 samples for real sensor ──
+    const minSamples = S.demoMotion ? 20 : 10;
+    if (S.frameN % 10 === 0 && S.sensorWindow.length >= minSamples) {
+      const result = ML.predict(S.sensorWindow);
+      const cond   = result.prediction;
+      const probs  = result.probabilities;
+      const conf   = Math.round(probs[cond] * 100);
+      const score  = roadScore(cond, S.rms);
+
+      S.condition = cond; S.probs = probs; S.confidence = conf;
+      updateCondUI(cond, probs, conf, score);
+
+      S.history[cond]++;
+      document.getElementById('stGood').textContent = S.history.good;
+      document.getElementById('stAvg').textContent  = S.history.average;
+      document.getElementById('stBad').textContent  = S.history.damaged;
+
+      if (cond !== S.prevCondition) {
+        const msgs = {
+          good:    `✅ Good road — Score ${score}/100`,
+          average: `⚠️ Average quality — Score ${score}/100`,
+          damaged: `🚨 ROAD DAMAGE! Score ${score}/100`,
+        };
+        addLog(msgs[cond], cond);
+        S.prevCondition = cond;
+        if (cond === 'damaged') showAlert('⚠️ Damaged road detected — slow down!');
+      }
+
+      // Place map dot every 3 s when we have a real GPS fix
+      const now = Date.now();
+      if (now - S.lastMapUpdate > 3000 && S.lat !== null && map) {
+        addMapPoint(S.lat, S.lng, cond, score, conf);
+        S.lastMapUpdate = now;
+      }
+    }
+
+  } else {
+    ['gX','gY','gZ','gR'].forEach(id => document.getElementById(id).classList.remove('active'));
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// ════════════════════════════════════════════════════════════
+//  EXPORT
+// ════════════════════════════════════════════════════════════
+function exportData() {
+  if (S.mapPoints.length === 0) { alert('No data to export yet. Start scanning first.'); return; }
+  const data = {
+    exported: new Date().toISOString(),
+    totalDistance: S.distance.toFixed(2) + ' km',
+    summary: S.history,
+    points: S.mapPoints,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `roadscan-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+}
+
+// ════════════════════════════════════════════════════════════
+//  BOOT
+// ════════════════════════════════════════════════════════════
+loop();
+</script>
+</body>
+</html>
